@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2610.19339v2</id>
+    <published>2026-10-14T10:00:00Z</published>
+    <title>Can We Believe
+      AI Peer Review?</title>
+    <author><name>Zongrui Yang</name></author>
+    <author><name>Gillian Dobbie</name></author>
+    <arxiv:comment>12 pages, accepted at ICLR 2027 (oral)</arxiv:comment>
+  </entry>
+</feed>
