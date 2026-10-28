@@ -21,7 +21,7 @@ import requests
 
 from paperq._facts import html_body_text
 
-USER_AGENT = "paperq/0.1 (https://github.com/monperrus/paper-quality)"
+USER_AGENT = "paperq/0.1 (https://github.com/ASSERT-KTH/paper-quality)"
 TIMEOUT = 60
 ARXIV_ID = re.compile(r"(?:arxiv\.org/(?:abs|pdf|html)/|arxiv:)?(\d{4}\.\d{4,5})(v\d+)?", re.I)
 

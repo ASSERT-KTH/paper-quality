@@ -21,6 +21,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "ruff", "mypy", "types-requests"]
 
+[project.urls]
+Homepage = "https://github.com/ASSERT-KTH/paper-quality"
+"Bug Tracker" = "https://github.com/ASSERT-KTH/paper-quality/issues"
+
 [project.scripts]
 paperq = "paperq.main:main"
 

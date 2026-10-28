@@ -14,7 +14,7 @@ from typing import Any
 
 import requests
 
-USER_AGENT = "paperq/0.1 (https://github.com/monperrus/paper-quality)"
+USER_AGENT = "paperq/0.1 (https://github.com/ASSERT-KTH/paper-quality)"
 
 # Section titles that announce an evaluation, and an acknowledgement of limits.
 EVALUATION_HEADING = re.compile(
