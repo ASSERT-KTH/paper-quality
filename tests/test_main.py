@@ -42,9 +42,9 @@ def test_schema_command(capsys: pytest.CaptureFixture[str]) -> None:
     assert json.loads(capsys.readouterr().out)["title"] == SCHEMA["title"]
 
 
-def test_llm_layers_not_built_yet(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main.main(["assess", "2610.19339"]) == 2
-    assert "--facts-only" in capsys.readouterr().err
+def test_assess_needs_a_paper(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main.main(["assess"]) == 2
+    assert "no paper" in capsys.readouterr().err
 
 
 def test_assess_json(fixture_paper: None, capsys: pytest.CaptureFixture[str]) -> None:
@@ -83,3 +83,40 @@ def test_fetch_failure_exits_1(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
     monkeypatch.setattr(main, "fetch", fail)
     assert main.main(["assess", "9999.99999", "--facts-only"]) == 1
     assert "9999.99999" in capsys.readouterr().err
+
+
+@pytest.fixture
+def scripted_llm(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fixture_paper: None) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    claims = [{"claim": "gain", "status": "supported", "evidence": "q", "location": "4", "quote_verbatim": True}]
+    monkeypatch.setattr(main, "classify_and_check",
+                        lambda *a, **k: ({"evidence_type": "empirical", "rationale": "r", "model": "m"}, claims))
+    run = {"model": "j", "sample": 0, "score": 2.5, "items": {}, "findings": [
+        {"item": "statistics", "severity": "major", "quote": "We ran 5 seeds", "explanation": "too few",
+         "verbatim": True}]}
+    monkeypatch.setattr(main._rubric, "grade",
+                        lambda *a, **k: ({"grade": 2.5, "iqr": 0.5, "runs": [run], "failures": []}, "graded"))
+
+
+def test_assess_all_layers_then_explain(scripted_llm: None, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main.main(["assess", "2610.19339", "--offline"]) == 0
+    out = capsys.readouterr().out
+    assert "graded 2.5/4 (IQR 0.5)" in out and "claims: 1/1 supported" in out
+    assert main.main(["explain", "2610.19339"]) == 0
+    out = capsys.readouterr().out
+    assert "major statistics: too few" in out and '"We ran 5 seeds"' in out
+    assert main.main(["explain", "2610.19339v1", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["findings"][0]["model"] == "j"
+
+
+def test_explain_unknown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    assert main.main(["explain", "2610.00001"]) == 1
+    assert "run paperq assess first" in capsys.readouterr().err
+
+
+def test_from_file(scripted_llm: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    ids = tmp_path / "ids.txt"
+    ids.write_text("2610.19339  # a comment\n\n# only a comment\n2610.19339v1\n")
+    assert main.main(["assess", "--from-file", str(ids), "--offline", "--json"]) == 0
+    assert len(capsys.readouterr().out.splitlines()) == 2

@@ -11,3 +11,4 @@ build/
 .coverage
 plan-*.md
 results/cache/
+results/*.log

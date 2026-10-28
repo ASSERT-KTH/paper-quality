@@ -105,7 +105,8 @@ SCHEMA: dict[str, Any] = {
             "description": "Tokens per layer.",
             "additionalProperties": {
                 "type": "object",
-                "properties": {"input_tokens": {"type": "integer"}, "output_tokens": {"type": "integer"}},
+                "properties": {"input_tokens": {"type": "integer"}, "cached_input_tokens": {"type": "integer"},
+                               "output_tokens": {"type": "integer"}},
             },
         },
         "errors": {"type": "array", "items": {"type": "string"}, "description": "sources that failed"},
