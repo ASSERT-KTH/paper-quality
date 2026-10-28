@@ -105,7 +105,8 @@ def _arxiv_get(url: str) -> str:
         _last_arxiv = time.monotonic()
         try:
             response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=60)
-            if response.status_code == 200:
+            # a throttled arXiv answers an empty 200: never take it for "no such paper"
+            if response.status_code == 200 and ("<feed" in response.text or "<html" in response.text):
                 return response.text
         except requests.RequestException:
             pass
