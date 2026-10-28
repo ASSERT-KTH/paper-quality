@@ -1,8 +1,9 @@
 """The one arXiv client: paced across every paperq process, patient with throttling.
 
 arXiv asks for at most one request every 3 seconds, from all of a host's clients together.
-The pace is kept in a lock file, so concurrent processes (an assessment and a reference-set
-build) share it instead of each keeping its own. A throttled arXiv answers 429 or an empty
+The pace is kept in a host-wide lock file ($XDG_CACHE_HOME/arxiv.lock), so concurrent
+processes (an assessment, a reference-set build, the trend-report pollers) share it
+instead of each keeping its own. A throttled arXiv answers 429 or an empty
 200; both are waited out (Retry-After when given), never taken for "no such paper".
 """
 
@@ -27,13 +28,13 @@ class ArxivError(requests.RequestException):
 def _lock_path() -> str:
     from paperq._fetch import cache_dir
 
-    path = cache_dir() / "arxiv.lock"
+    path = cache_dir().parent / "arxiv.lock"  # beside paperq's cache: shared by every arXiv client
     path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
 
 
 def _paced() -> None:
-    """Block until INTERVAL has passed since the last request of any paperq process."""
+    """Block until INTERVAL has passed since the last arXiv request of any process."""
     with open(_lock_path(), "a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         lock.seek(0)

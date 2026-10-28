@@ -57,4 +57,4 @@ def test_pace_is_shared_through_the_lock_file(monkeypatch: pytest.MonkeyPatch, t
     start = time.time()
     _arxiv._paced()  # a second caller (here the same process) waits for the interval
     assert time.time() - start >= 0.15
-    assert float((tmp_path / "paperq" / "arxiv.lock").read_text()) > 0
+    assert float((tmp_path / "arxiv.lock").read_text()) > 0
