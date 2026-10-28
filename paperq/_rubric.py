@@ -135,7 +135,7 @@ def grade(title: str, text: str, evidence_type: str, usage: dict[str, dict[str, 
     )
     runs: list[dict[str, Any]] = []
     failures: list[str] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         # sample 0 of each judge first: the provider caches the prompt, which the other samples then reuse
         waves = [[(m, 0) for m in judges], [(m, s) for m in judges for s in range(1, samples)]]
         for wave in waves:

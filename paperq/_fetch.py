@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -105,18 +106,40 @@ def _pdf_text(pdf: bytes) -> str:
     return out.stdout
 
 
+API_RETRY_WAITS = (5, 20, 60)  # seconds; arXiv's API answers an empty 200 when it throttles
+
+
+def _metadata(query: str, cacheable: bool) -> dict[str, Any]:
+    """The parsed arXiv API answer, retried while it comes back empty; only a parsed answer is cached."""
+    path = cache_dir() / "http" / hashlib.sha256(query.encode()).hexdigest()
+    if cacheable and path.exists():
+        return parse_atom(path.read_text(encoding="utf-8", errors="replace"))
+    problem = ""
+    for wait in (0, *API_RETRY_WAITS):
+        time.sleep(wait)
+        try:
+            response = _get(query)
+        except requests.RequestException as exc:
+            problem = str(exc)
+            continue
+        body = response.content.decode("utf-8", "replace")
+        if response.status_code != 200 or "<entry>" not in body:
+            problem = f"HTTP {response.status_code}, {'no entry' if body else 'empty answer'}"
+            continue
+        meta = parse_atom(body)
+        if cacheable:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        return meta
+    raise FetchError(f"arXiv API: {problem}")
+
+
 def fetch(ref: str) -> Paper:
     """Metadata and full text of an arXiv paper. Raises FetchError when even metadata fails."""
     arxiv_id, version = parse_arxiv_id(ref)
     query = f"http://export.arxiv.org/api/query?id_list={arxiv_id}{version or ''}"
-    try:
-        # an unversioned query names the latest version, which changes: never cache it
-        atom = _cached(query) if version else _get(query).content
-    except requests.RequestException as exc:
-        raise FetchError(f"arXiv API: {exc}") from exc
-    if not atom:
-        raise FetchError(f"arXiv API has no {arxiv_id}")
-    meta = parse_atom(atom.decode("utf-8", "replace"))
+    # an unversioned query names the latest version, which changes: never cache it
+    meta = _metadata(query, cacheable=bool(version))
     version = version or meta["version"]
     vid = f"{arxiv_id}{version or ''}"
 
