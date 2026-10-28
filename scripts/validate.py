@@ -18,6 +18,7 @@ by an instrument that can still change. Records are stored in results/records/<s
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import random
 import re
@@ -44,6 +45,7 @@ SEED = 20261028
 FREEZE_TAG = "validation-freeze"
 UNCERTAIN_AS = 2.5  # pre-registered: an uncertain verdict counts as this grade in H1
 STABILITY = 10  # per class
+PAPERS_IN_PARALLEL = 3  # speed only: every answer is cached per (model, prompt, sample)
 
 THRESHOLDS = {"H1": 0.75, "H2": 0.25, "H3": 0.6, "H5": 1.0, "C1_auroc": 0.70, "C1_drop": 0.05,
               "H6": 0.25, "H7": 0.6}
@@ -153,24 +155,26 @@ def run(_args: argparse.Namespace) -> int:
         return 2
     sets = {name: load(name) for name in ("positives", "negatives", "boundary", "injected", "rewrites")}
     for name in ("positives", "negatives", "boundary"):
-        for n, entry in enumerate(sets[name], 1):
-            _assess(name, entry)
-            print(f"{name}: {n}/{len(sets[name])}", file=sys.stderr)
+        _many(name, sets[name])
     for entry in sets["positives"] + sets["negatives"]:
         path = RECORDS / "probe" / f"{_key(entry)}.json"
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(probe(entry)))
-    for entry in sets["injected"]:
-        _assess("injected", entry, make=make_variants.injected)
-    for entry in sets["rewrites"]:
-        _assess("rewrites", entry, make=make_variants.rewritten)
-    for entry in random.Random(SEED + 4).sample(sets["positives"], 10):
-        _assess("refs-fabricated", entry, make=make_variants.fabricated_refs)
+    _many("injected", sets["injected"], make=make_variants.injected)
+    _many("rewrites", sets["rewrites"], make=make_variants.rewritten)
+    _many("refs-fabricated", random.Random(SEED + 4).sample(sets["positives"], 10), make=make_variants.fabricated_refs)
     rng = random.Random(SEED + 5)
-    for entry in rng.sample(sets["positives"], STABILITY) + rng.sample(sets["negatives"], STABILITY):
-        _assess("stability", entry, use_cache=False, store_as="stability")
+    stability = rng.sample(sets["positives"], STABILITY) + rng.sample(sets["negatives"], STABILITY)
+    _many("stability", stability, use_cache=False)
     return 0
+
+
+def _many(name: str, entries: list[dict[str, Any]], **kwargs: Any) -> None:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=PAPERS_IN_PARALLEL) as pool:
+        futures = [pool.submit(_assess, name, entry, **kwargs) for entry in entries]
+        for n, _ in enumerate(concurrent.futures.as_completed(futures), 1):
+            print(f"{name}: {n}/{len(entries)}", file=sys.stderr, flush=True)
 
 
 # --------------------------------------------------------------------------- statistics
