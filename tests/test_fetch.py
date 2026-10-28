@@ -21,13 +21,12 @@ def _serve(monkeypatch: pytest.MonkeyPatch, pages: dict[str, bytes | None], tmp:
         asked.append(url)
         return next((body for prefix, body in pages.items() if url.startswith(prefix)), None)
 
-    def get(url: str) -> SimpleNamespace:
+    def get(url: str, ok: object = None) -> SimpleNamespace:
         body = cached(url)
         return SimpleNamespace(status_code=200 if body is not None else 404, content=body or b"")
 
     monkeypatch.setattr(_fetch, "_cached", cached)
     monkeypatch.setattr(_fetch, "_get", get)
-    monkeypatch.setattr(_fetch, "API_RETRY_WAITS", (0,))
     monkeypatch.setattr(_fetch, "cache_dir", lambda: tmp or Path("/nonexistent-paperq-test"))
     return asked
 
@@ -63,7 +62,7 @@ def test_cache_is_used(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     calls: list[str] = []
 
-    def get(url: str) -> SimpleNamespace:
+    def get(url: str, ok: object = None) -> SimpleNamespace:
         calls.append(url)
         return SimpleNamespace(status_code=200, content=b"body", raise_for_status=lambda: None)
 
@@ -80,20 +79,11 @@ def test_404_is_none_and_not_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert not (tmp_path / "paperq").exists()
 
 
-def test_throttled_api_is_retried_and_never_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    answers = iter([b"", b"", ATOM])  # arXiv throttles with an empty 200
-    monkeypatch.setattr(_fetch, "_get", lambda url: SimpleNamespace(status_code=200, content=next(answers)))
-    monkeypatch.setattr(_fetch, "cache_dir", lambda: tmp_path)
-    monkeypatch.setattr(_fetch, "API_RETRY_WAITS", (0, 0, 0))
-    assert _fetch._metadata("q", cacheable=True)["version"] == "v2"
-    cached = list((tmp_path / "http").iterdir())
-    assert len(cached) == 1 and b"<entry>" in cached[0].read_bytes()
 
-
-def test_throttled_api_gives_up(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(_fetch, "_get", lambda url: SimpleNamespace(status_code=200, content=b""))
+def test_feed_without_entry_is_no_paper(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    feed = b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
+    monkeypatch.setattr(_fetch, "_get", lambda url, ok=None: SimpleNamespace(status_code=200, content=feed))
     monkeypatch.setattr(_fetch, "cache_dir", lambda: tmp_path)
-    monkeypatch.setattr(_fetch, "API_RETRY_WAITS", (0,))
-    with pytest.raises(_fetch.FetchError, match="empty answer"):
-        _fetch._metadata("q", cacheable=True)
-    assert not (tmp_path / "http").exists()
+    with pytest.raises(_fetch.FetchError, match="arXiv has no"):
+        _fetch._metadata("q?id_list=2610.00001v1", cacheable=True)
+    assert not (tmp_path / "http").exists()  # never cached

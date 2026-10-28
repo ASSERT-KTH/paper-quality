@@ -12,7 +12,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,10 +20,9 @@ from typing import Any
 import feedparser
 import requests
 
+from paperq import _arxiv
 from paperq._facts import html_body_text
 
-USER_AGENT = "paperq/0.1 (https://github.com/ASSERT-KTH/paper-quality)"
-TIMEOUT = 60
 ARXIV_ID = re.compile(r"(?:arxiv\.org/(?:abs|pdf|html)/|arxiv:)?(\d{4}\.\d{4,5})(v\d+)?", re.I)
 
 
@@ -59,8 +58,9 @@ def parse_arxiv_id(ref: str) -> tuple[str, str | None]:
     return found.group(1), found.group(2)
 
 
-def _get(url: str) -> requests.Response:
-    return requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
+def _get(url: str, ok: Callable[[requests.Response], bool] = _arxiv.any_ok) -> requests.Response:
+    """Every paperq request goes to arXiv, so every one goes through the paced client."""
+    return _arxiv.get(url, ok)
 
 
 def _cached(url: str) -> bytes | None:
@@ -71,7 +71,6 @@ def _cached(url: str) -> bytes | None:
     response = _get(url)
     if response.status_code == 404:
         return None
-    response.raise_for_status()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(response.content)
     return response.content
@@ -106,32 +105,23 @@ def _pdf_text(pdf: bytes) -> str:
     return out.stdout
 
 
-API_RETRY_WAITS = (5, 20, 60)  # seconds; arXiv's API answers an empty 200 when it throttles
-
-
 def _metadata(query: str, cacheable: bool) -> dict[str, Any]:
-    """The parsed arXiv API answer, retried while it comes back empty; only a parsed answer is cached."""
+    """The parsed arXiv API answer; only a parsed answer is cached."""
     path = cache_dir() / "http" / hashlib.sha256(query.encode()).hexdigest()
     if cacheable and path.exists():
         return parse_atom(path.read_text(encoding="utf-8", errors="replace"))
-    problem = ""
-    for wait in (0, *API_RETRY_WAITS):
-        time.sleep(wait)
-        try:
-            response = _get(query)
-        except requests.RequestException as exc:
-            problem = str(exc)
-            continue
-        body = response.content.decode("utf-8", "replace")
-        if response.status_code != 200 or "<entry>" not in body:
-            problem = f"HTTP {response.status_code}, {'no entry' if body else 'empty answer'}"
-            continue
-        meta = parse_atom(body)
-        if cacheable:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(body, encoding="utf-8")
-        return meta
-    raise FetchError(f"arXiv API: {problem}")
+    try:
+        response = _get(query, _arxiv.api_ok)
+    except requests.RequestException as exc:
+        raise FetchError(f"arXiv API: {exc}") from exc
+    body = response.content.decode("utf-8", "replace")
+    if response.status_code == 404 or "<entry>" not in body:
+        raise FetchError(f"arXiv has no {query.rsplit('=', 1)[-1]}")
+    meta = parse_atom(body)
+    if cacheable:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+    return meta
 
 
 def fetch(ref: str) -> Paper:

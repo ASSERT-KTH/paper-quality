@@ -33,7 +33,6 @@ import random
 import re
 import statistics
 import sys
-import time
 import unicodedata
 import urllib.parse
 from pathlib import Path
@@ -41,6 +40,8 @@ from typing import Any
 
 import feedparser
 import requests
+
+from paperq import _arxiv
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "refsets"
@@ -92,26 +93,10 @@ def _cached_json(name: str, produce: Any) -> Any:
 
 # --------------------------------------------------------------------------- arXiv
 
-_last_arxiv = 0.0
-
-
 def _arxiv_get(url: str) -> str:
-    """arXiv asks for one request every 3 seconds."""
-    global _last_arxiv
-    wait = 3.1 - (time.monotonic() - _last_arxiv)
-    if wait > 0:
-        time.sleep(wait)
-    for attempt in range(4):
-        _last_arxiv = time.monotonic()
-        try:
-            response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=60)
-            # a throttled arXiv answers an empty 200: never take it for "no such paper"
-            if response.status_code == 200 and ("<feed" in response.text or "<html" in response.text):
-                return response.text
-        except requests.RequestException:
-            pass
-        time.sleep(10 * (attempt + 1))
-    raise RuntimeError(f"arXiv kept failing: {url}")
+    """Through paperq's paced client, which every paperq process shares."""
+    ok = _arxiv.api_ok if "export.arxiv.org" in url else _arxiv.page_ok
+    return _arxiv.get(url, ok).text
 
 
 STOPWORDS = {"and", "not", "the", "for", "with", "from", "into", "via", "andnot", "are", "can", "its"}
